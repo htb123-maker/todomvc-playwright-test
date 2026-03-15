@@ -1,13 +1,26 @@
+import os
+
 from playwright.sync_api import sync_playwright, expect
 
 
-BASE_URL = "http://127.0.0.1:8081/dist/"
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8081/")
+
+
+def _launch_browser(p):
+    headless_env = os.getenv("PLAYWRIGHT_HEADLESS")
+    if headless_env is None:
+        headless = bool(os.getenv("CI"))
+    else:
+        headless = headless_env == "1"
+
+    slow_mo = int(os.getenv("PLAYWRIGHT_SLOW_MO", "0" if headless else "500"))
+    return p.chromium.launch(headless=headless, slow_mo=slow_mo)
 
 
 def test_duplicate_todo_issue():
     """自动化复现并验证「重复添加无提示」Issue"""
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         page.goto(BASE_URL, timeout=10000)
 
