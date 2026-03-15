@@ -1,0 +1,60 @@
+name: Playwright Pytest + Allure Report
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Start TodoMVC static server
+        run: |
+          nohup python -m http.server 8081 --directory examples/javascript-es6/dist > server.log 2>&1 &
+
+      - name: Run pytest (parallel)
+        env:
+          BASE_URL: http://127.0.0.1:8081/
+          CI: '1'
+          PLAYWRIGHT_HEADLESS: '1'
+          PLAYWRIGHT_SLOW_MO: '0'
+        run: |
+          pytest -n auto -s --alluredir=allure-results
+
+      - name: Allure Report action
+        uses: simple-elf/allure-report-action@v1.10
+        if: always()
+        with:
+          allure_results: allure-results
+          allure_report: allure-report
+          gh_pages: gh-pages
+
+      - name: Deploy report to GitHub Pages (gh-pages)
+        uses: peaceiris/actions-gh-pages@v4
+        if: always()
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: allure-report

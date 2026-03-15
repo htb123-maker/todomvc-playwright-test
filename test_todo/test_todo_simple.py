@@ -6,6 +6,20 @@ import time
 import os
 
 
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8081/dist/")
+
+
+def _launch_browser(p):
+    headless_env = os.getenv("PLAYWRIGHT_HEADLESS")
+    if headless_env is None:
+        headless = bool(os.getenv("CI"))
+    else:
+        headless = headless_env == "1"
+
+    slow_mo = int(os.getenv("PLAYWRIGHT_SLOW_MO", "0" if headless else "500"))
+    return p.chromium.launch(headless=headless, slow_mo=slow_mo)
+
+
 def _retry(fn, retries=3, delay_seconds=0.5):
     last_err = None
     for _ in range(retries):
@@ -69,48 +83,39 @@ def _allure_get_page_by_nodeid(nodeid):
 # 多线程关键1.函数必须以test开头，pytest能快速识别，多线程也认识这个规则
 def test_1_add_single_todo():
     print("🚀 测试开始：添加单个Todo")
-    # 启动playwright(with语句：自动清理资源，多线程时不会残留进程
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
-        # 打开新的浏览器页面（多线程时，每个线程会创建独立页面，互不干扰）
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        # 写入页面地址，设置超时时间
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-        # 多线程关键：用语义化定位（而非硬编码xpath），避免多线程执行时元素定位失败
-        # get_by_placeholder:根据输入框提示文字定位，页面布局变了也能找到，多线程更稳定
-        input_box = page.get_by_placeholder("What needs to be done?")
-        # 输入代办文本；多线程时每个用例输入的文本唯一
+        page.goto(BASE_URL, timeout=10000)
+        input_box = todo_input(page)
         input_box.fill("买牛奶")
         print("📝 已输入：买牛奶")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-        # 断言（验证用例是否成功，测试的核心）
-        # 定位代办列表：.todo-list li是TodoMVC的代办元素
         todo_items = page.locator(".todo-list li")
-        # expect:Playwright的断言
         expect(todo_items).to_have_count(1, timeout=5000)
         print("✅ 断言通过：列表中有1条Todo")
         expect(todo_items).to_have_text("买牛奶")
         print("✅ 断言通过：文本内容是'买牛奶'")
         print("🎉 测试执行成功！")
         import time
-        time.sleep(3)  # 停留3秒让你看到结果
+        time.sleep(3)
         browser.close()
         print("🔚 浏览器已关闭")
+
 
 @allure.feature("核心功能测试")
 @allure.title("正常添加第二个Todo（多线程测试）")
 def test_2_add_second_todo():
     print("\n🚀 测试开始：添加第二个Todo")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("买面包")
         print("📝 已输入：买面包")
@@ -127,38 +132,31 @@ def test_2_add_second_todo():
         browser.close()
         print("🔚 浏览器已关闭")
 
+
 @allure.feature("核心功能测试")
 @allure.title("正常删除单个Todo（进阶用例）")
 def test_3_delete_single_todo():
     print("\n🚀 测试开始：删除单个Todo")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
-        # 先添加1个Todo
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("要删除的待办")
         print("📝 已输入：要删除的待办")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
-        # 验证添加成功
         todo_items = page.locator(".todo-list li")
         expect(todo_items).to_have_count(1, timeout=5000)
         print("✅ 断言通过：列表中有1条Todo")
-
-        # 定位并删除
         todo_item = page.locator(".todo-list li").nth(0)
         todo_item.hover()
         print("👆 悬浮显示删除按钮")
         delete_btn = todo_item.locator(".destroy")
         delete_btn.click()
         print("🗑️ 点击删除按钮")
-
-        # 断言删除成功
         expect(page.locator(".todo-list li")).to_have_count(0, timeout=5000)
         print("✅ 断言通过：列表已为空")
         count_text = page.locator(".todo-count")
@@ -170,39 +168,38 @@ def test_3_delete_single_todo():
         browser.close()
         print("🔚 浏览器已关闭")
 
+
 @allure.feature("典型bug复现")
 @allure.title("添加Todo后刷新页面，验证数据丢失（持久化bug复现）")
 @allure.severity(allure.severity_level.CRITICAL)
 def test_4_refresh_lost_todo():
-    print("\n� 测试开始：刷新后数据丢失bug复现")
+    print("\n🚀 测试开始：刷新后数据丢失bug复现")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("持久化测试任务")
         print("📝 已输入：持久化测试任务")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         todo_items_before = page.locator(".todo-list li")
         expect(todo_items_before).to_have_count(1, timeout=5000)
         print("✅ 断言通过：刷新前列表中有1条Todo")
-
         page.reload(timeout=10000)
         print("🔄 页面已刷新")
         import time
         time.sleep(3)
-
         todo_items_after = page.locator(".todo-list li")
         expect(todo_items_after).to_have_count(0, timeout=5000)
         print("✅ 断言通过：刷新后列表为空，bug复现成功")
         print("🎉 测试执行成功！")
         browser.close()
         print("🔚 浏览器已关闭")
+
+
 # ====================== 5. 重复添加相同Todo（bug复现） ======================
 @allure.feature("典型bug复现")
 @allure.title("重复添加相同Todo，验证重复项存在（bug复现）")
@@ -210,23 +207,20 @@ def test_4_refresh_lost_todo():
 def test_5_add_duplicate_todo():
     print("\n🚀 测试开始：重复添加Todo bug复现")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("重复测试任务")
         print("📝 已输入：重复测试任务（第1次）")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         input_box.fill("重复测试任务")
         print("📝 已输入：重复测试任务（第2次）")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         todo_items = page.locator(".todo-list li")
         expect(todo_items).to_have_count(2, timeout=5000)
         print("✅ 断言通过：列表中有2条Todo（重复项存在）")
@@ -247,31 +241,26 @@ def test_5_add_duplicate_todo():
 def test_6_filter_active_todo():
     print("\n🚀 测试开始：Active筛选bug复现")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("未完成任务")
         print("📝 已输入：未完成任务")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         input_box.fill("已完成任务")
         print("📝 已输入：已完成任务")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         completed_todo_toggle = page.locator(".todo-list li").nth(1).locator(".toggle")
         completed_todo_toggle.click()
         print("✅ 标记第二个Todo为完成")
-
         active_filter_btn = page.get_by_text("Active")
         active_filter_btn.click()
         print("🔍 点击Active筛选按钮")
-
         completed_todo = page.locator(".todo-list li.completed")
         expect(completed_todo).to_have_count(0, timeout=5000)
         print("✅ 断言通过：Active筛选正常工作，已完成Todo已被隐藏")
@@ -280,6 +269,8 @@ def test_6_filter_active_todo():
         time.sleep(3)
         browser.close()
         print("🔚 浏览器已关闭")
+
+
 # ====================== 7. 超长文本添加Todo（边界值测试） ======================
 @allure.feature("边界值测试")
 @allure.title("添加50+字符超长文本Todo，验证页面布局与显示正常")
@@ -287,21 +278,18 @@ def test_6_filter_active_todo():
 def test_7_add_long_text_todo():
     print("\n🚀 测试开始：超长文本Todo边界值测试")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         long_text = "这是一个超过50个字符的超长待办事项文本，用于测试输入框的边界值兼容性——测试文本长度足够长，验证页面布局是否混乱"
         print(f"📝 超长文本长度：{len(long_text)}")
-
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill(long_text)
         print("📝 已输入超长文本")
         page.keyboard.press("Enter")
         print("⏎ 按下回车")
-
         todo_item = page.locator(".todo-list li").nth(0)
         todo_label = todo_item.locator("label")
         expect(todo_label).to_contain_text(long_text[:30])
@@ -322,17 +310,15 @@ def test_7_add_long_text_todo():
 def test_8_esc_shortcut_todo():
     print("\n🚀 测试开始：ESC快捷键交互测试")
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
-
+        page.goto(BASE_URL, timeout=10000)
         input_box = page.get_by_placeholder("What needs to be done?")
         test_text = "ESC快捷键测试内容"
         input_box.fill(test_text)
         print(f"📝 已输入：{test_text}")
-
         page.keyboard.press("Escape")
         print("⌨️ 按下ESC键")
 
@@ -353,11 +339,11 @@ def test_9_batch_delete_todo():
     print("\n🚀 测试开始：批量删除已完成Todo测试")
     import time
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         page = browser.new_page()
         _allure_register_page(page)
         print("📱 浏览器已打开")
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)
+        page.goto(BASE_URL, timeout=10000)
 
         input_box = page.get_by_placeholder("What needs to be done?")
         input_box.fill("未完成Todo-保留")
@@ -444,7 +430,7 @@ def test_10_mobile_iphone14_todo():
         # playwright.devices["iPhone 14"] 包含：屏幕尺寸390x844、像素比3、移动端UA等
         iphone_14 = p.devices["iPhone 14"]
         # 启动浏览器并应用iPhone 14配置（多线程：每个用例独立的设备模拟）
-        browser = p.chromium.launch(headless=False, slow_mo=500)
+        browser = _launch_browser(p)
         # 新建上下文：绑定iPhone 14的设备配置（关键！模拟移动端的核心）
         context = browser.new_context(**iphone_14)
         # 新建页面（基于移动端上下文）
@@ -453,7 +439,7 @@ def test_10_mobile_iphone14_todo():
         print("📱 浏览器已打开（iPhone 14设备模拟）")
 
         # 2. 访问TodoMVC（移动端模式）
-        page.goto("http://127.0.0.1:8081/dist/", timeout=10000)  # 注意端口改成你现在用的8081
+        page.goto(BASE_URL, timeout=10000)
         print("🌐 已打开TodoMVC页面")
 
         # 3. 移动端布局验证（核心：适配性）
