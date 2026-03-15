@@ -43,13 +43,12 @@ jobs:
         run: |
           pytest -n auto -s --alluredir=allure-results
 
-      - name: Allure Report action
-        uses: simple-elf/allure-report-action@v1.10
+      - name: Generate Allure HTML report
         if: always()
-        with:
-          allure_results: allure-results
-          allure_report: allure-report
-          gh_pages: gh-pages
+        run: |
+          curl -Ls -o allure.tgz https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz
+          tar -xzf allure.tgz
+          ./allure-2.27.0/bin/allure generate allure-results -o allure-report --clean
 
       - name: Deploy report to GitHub Pages (gh-pages)
         uses: peaceiris/actions-gh-pages@v4
