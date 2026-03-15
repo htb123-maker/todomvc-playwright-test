@@ -2,6 +2,44 @@
 
 > Helping you select an MV\* framework
 
+## Playwright + Pytest + Allure Tests
+
+### Prerequisites
+
+- Python 3.8+
+- Allure CLI (optional, only needed to generate/open HTML reports)
+
+### Install (Python)
+
+```bash
+pip install -r requirements.txt
+python -m playwright install
+```
+
+### Start TodoMVC (local)
+
+This test suite expects the TodoMVC page to be available at `BASE_URL`.
+
+Example (serve a dist folder on port 8081):
+
+```bash
+python -m http.server 8081 --directory examples/javascript-es6/dist
+```
+
+### Run tests (parallel)
+
+```bash
+set BASE_URL=http://127.0.0.1:8081/
+pytest -n auto -s --alluredir=allure-results
+```
+
+### Generate / open Allure HTML report
+
+```bash
+allure generate allure-results -o allure-report --clean
+allure open allure-report
+```
+
 ### [Website](http://todomvc.com)&nbsp;&nbsp;&nbsp;&nbsp;[Blog](http://blog.tastejs.com)&nbsp;&nbsp;&nbsp;&nbsp;[TasteJS](http://tastejs.com)
 
 [![Build Status](https://travis-ci.org/tastejs/todomvc.svg)](https://travis-ci.org/tastejs/todomvc)
