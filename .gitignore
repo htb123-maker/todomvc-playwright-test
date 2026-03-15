@@ -6,3 +6,10 @@
 /cypress/videos
 /.tmp
 .DS_Store
+allure-results/
+allure-report/
+playwright-report/
+test-results/
+.idea/
+__pycache__/
+*.pyc
